@@ -47,8 +47,10 @@ trading:
   # Momentum: 30% + 30% (laisser courir)
   # Standard: 40% + 40% (équilibré)
 
-  # Check interval in seconds
-  check_interval: 30
+  # Check interval in seconds (fréquence de récupération des prix)
+  # Plus c'est bas, plus le P&L et les graphiques s'actualisent vite
+  # Recommandé: 5-10 secondes pour du temps réel
+  check_interval: 5
 
 strategy:
   # Use AI for decision making
@@ -77,8 +79,15 @@ ai:
   # Max tokens for analysis
   max_tokens: 500
 
-  # Analysis interval (in seconds) - 10 min pour économiser encore plus
-  analysis_interval: 600
+  # Analysis interval (in seconds) - Fréquence d'analyse IA (curseur)
+  # Options recommandées:
+  #   300  = 5 minutes  (très fréquent, coût élevé)
+  #   600  = 10 minutes (fréquent, coût moyen)
+  #   900  = 15 minutes (équilibré)
+  #   1800 = 30 minutes (économique)
+  #   3600 = 1 heure    (très économique)
+  # ⚠️ Plus fréquent = plus de coûts OpenAI !
+  analysis_interval: 600  # 10 minutes par défaut
 
 dashboard:
   # Dashboard update interval (in seconds)
