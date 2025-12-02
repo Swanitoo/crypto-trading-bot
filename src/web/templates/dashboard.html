@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Trading Bot Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🤖 Crypto Trading Bot</h1>
+            <div class="bot-controls">
+                <button id="startBtn" class="btn btn-success">▶ Start</button>
+                <button id="pauseBtn" class="btn btn-warning">⏸ Pause</button>
+                <button id="stopBtn" class="btn btn-danger">⏹ Stop</button>
+                <span id="botStatus" class="status-badge">Stopped</span>
+            </div>
+        </header>
+
+        <!-- Balance Summary -->
+        <section class="balance-section">
+            <div class="card">
+                <h3>💰 Balance</h3>
+                <div class="balance-value">
+                    <span class="currency">$</span>
+                    <span id="totalBalance">0.00</span>
+                </div>
+                <div class="balance-detail">
+                    <span>Available: $<span id="availableBalance">0.00</span></span>
+                    <span>In Positions: $<span id="inPositions">0.00</span></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📊 Profit/Loss</h3>
+                <div class="pnl-value" id="pnlValue">
+                    <span class="currency">$</span>
+                    <span id="totalPnL">0.00</span>
+                </div>
+                <div class="pnl-percent" id="pnlPercent">
+                    +0.00%
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📈 Performance</h3>
+                <div class="stats-grid">
+                    <div>
+                        <div class="stat-label">Total Trades</div>
+                        <div class="stat-value" id="totalTrades">0</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Win Rate</div>
+                        <div class="stat-value" id="winRate">0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>⚠️ Risk Metrics</h3>
+                <div class="stats-grid">
+                    <div>
+                        <div class="stat-label">Open Positions</div>
+                        <div class="stat-value" id="openPositions">0</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Daily Loss</div>
+                        <div class="stat-value" id="dailyLoss">0%</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Live P&L Widget -->
+        <section class="live-pnl-section">
+            <div class="card live-pnl-card">
+                <h3>💰 P&L EN DIRECT</h3>
+                <div class="live-pnl-summary">
+                    <div class="live-pnl-total">
+                        <div class="live-pnl-label">Total P&L</div>
+                        <div class="live-pnl-value" id="livePnLValue">
+                            <span class="currency">$</span>
+                            <span id="livePnLAmount">0.00</span>
+                        </div>
+                        <div class="live-pnl-percent" id="livePnLPercent">+0.00%</div>
+                    </div>
+                    <div class="live-pnl-count">
+                        <span id="livePnLCount">0</span> position(s) ouverte(s)
+                    </div>
+                </div>
+                <div id="livePnLPositions" class="live-pnl-positions">
+                    <!-- Positions will be inserted here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts -->
+        <section class="charts-section">
+            <div class="card chart-card">
+                <h3>📉 Balance History (24h)</h3>
+                <canvas id="balanceChart"></canvas>
+            </div>
+            <div class="card chart-card">
+                <h3>💹 Market Overview</h3>
+                <div id="marketOverview" class="market-overview">
+                    Loading...
+                </div>
+            </div>
+        </section>
+
+        <!-- Open Positions -->
+        <section class="positions-section">
+            <div class="card">
+                <h3>📍 Open Positions</h3>
+                <div id="positionsList" class="positions-list">
+                    <p class="empty-state">No open positions</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recent Trades -->
+        <section class="trades-section">
+            <div class="card">
+                <h3>📜 Recent Trades</h3>
+                <div id="tradesList" class="trades-list">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Pair</th>
+                                <th>Side</th>
+                                <th>Price</th>
+                                <th>Amount</th>
+                                <th>P&L</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradesTableBody">
+                            <tr>
+                                <td colspan="7" class="empty-state">No trades yet</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI Analysis -->
+        <section class="ai-section">
+            <div class="card">
+                <h3>🤖 AI Analysis</h3>
+                <div id="aiAnalysisList" class="ai-list">
+                    <p class="empty-state">No AI analysis yet</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Modal pour les graphiques -->
+    <div id="chartModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Graphique</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="modalChartContainer" class="modal-chart-container">
+                    <canvas id="modalChart"></canvas>
+                </div>
+                <div id="modalPositionInfo" class="modal-position-info">
+                    <!-- Position info will be inserted here -->
+                </div>
+                <div class="modal-chart-legend">
+                    <div class="position-chart-legend-item">
+                        <div class="position-chart-legend-color" style="background: #1da1f2;"></div>
+                        <span>Prix</span>
+                    </div>
+                    <div class="position-chart-legend-item">
+                        <div class="position-chart-legend-color" style="background: #00ba88;"></div>
+                        <span>Entrée (BUY)</span>
+                    </div>
+                    <div class="position-chart-legend-item">
+                        <div class="position-chart-legend-color" style="background: #f6465d;"></div>
+                        <span>Sortie (SELL)</span>
+                    </div>
+                    <div class="position-chart-legend-item">
+                        <div class="position-chart-legend-color" style="background: #ffc107;"></div>
+                        <span>SL/TP</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

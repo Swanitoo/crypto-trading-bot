@@ -1,0 +1,91 @@
+trading:
+  # Trading mode: 'paper' for simulation, 'live' for real trading
+  mode: paper
+
+  # Initial balance (in USDT or EUR)
+  initial_balance: 10
+
+  # Trading pairs to monitor
+  # Option 1: Liste manuelle
+  # pairs:
+  #   - BTC/USDT
+  #   - ETH/USDT
+
+  # Option 2: Top automatique (recommandé)
+  pairs: auto  # Récupère automatiquement le top par volume
+
+  # Nombre de paires si mode auto (réduit à 5 pour éviter crashs)
+  auto_pairs_count: 5
+
+  # Amount to use per trade (in USDT)
+  trade_amount: 5
+
+  # Maximum number of concurrent positions (auto = nombre de paires)
+  max_positions: auto  # S'adapte au nombre de paires
+
+  # Minimum profit percentage to take profit
+  take_profit_percent: 3
+
+  # Maximum loss percentage before stop-loss
+  stop_loss_percent: 2
+
+  # Trading fees (Binance: 0.1%, with BNB: 0.075%)
+  trading_fees_percent: 0.1
+
+  # DCA (Dollar Cost Averaging) - Accumulation intelligente
+  enable_dca: true  # Permet d'acheter plusieurs fois la même crypto
+  dca_threshold_percent: -2.0  # Accumuler si prix baisse de 2% vs prix moyen
+  max_dca_entries: 3  # Maximum 3 entrées par paire
+
+  # Trailing Stop configuration
+  use_trailing_stop: true  # Active le trailing stop agressif
+
+  # Partial Take Profit (vente par morceaux pour optimiser les gains)
+  enable_partial_tp: true  # Active les sorties partielles
+  # Les niveaux sont calculés automatiquement selon le contexte de marché
+  # Crash recovery: 50% + 40% (sortie rapide)
+  # Momentum: 30% + 30% (laisser courir)
+  # Standard: 40% + 40% (équilibré)
+
+  # Check interval in seconds
+  check_interval: 30
+
+strategy:
+  # Use AI for decision making
+  use_ai: true
+
+  # AI confidence threshold (0-100)
+  ai_confidence_threshold: 50
+
+  # Technical indicators to use
+  indicators:
+    - RSI
+    - MACD
+    - EMA
+
+  # RSI thresholds
+  rsi_oversold: 30
+  rsi_overbought: 70
+
+ai:
+  # OpenAI model to use (GPT-3.5 = 10x moins cher que GPT-4)
+  model: gpt-3.5-turbo
+
+  # Temperature for responses
+  temperature: 0.3
+
+  # Max tokens for analysis
+  max_tokens: 500
+
+  # Analysis interval (in seconds) - 10 min pour économiser encore plus
+  analysis_interval: 600
+
+dashboard:
+  # Dashboard update interval (in seconds)
+  update_interval: 5
+
+  # Number of candles to display
+  chart_candles: 100
+
+  # Enable notifications
+  notifications: true

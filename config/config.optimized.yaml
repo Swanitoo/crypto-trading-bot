@@ -1,0 +1,69 @@
+# Configuration Optimisée pour 10€ de Capital
+# Économise 90% des coûts IA (GPT-3.5 au lieu de GPT-4)
+# Utilise ce fichier avec : python main.py --config config/config.optimized.yaml
+
+trading:
+  # Trading mode: 'paper' for simulation, 'live' for real trading
+  mode: paper
+
+  # Initial balance (in USDT or EUR)
+  initial_balance: 10
+
+  # Trading pairs to monitor (réduit à 1 pour économiser)
+  pairs:
+    - BTC/USDT
+
+  # Amount to use per trade (in USDT)
+  trade_amount: 5
+
+  # Maximum number of concurrent positions
+  max_positions: 1  # Réduit à 1 car 1 seule paire
+
+  # Minimum profit percentage to take profit
+  take_profit_percent: 5
+
+  # Maximum loss percentage before stop-loss
+  stop_loss_percent: 3
+
+  # Check interval in seconds
+  check_interval: 30
+
+strategy:
+  # Use AI for decision making
+  use_ai: true
+
+  # AI confidence threshold (0-100)
+  ai_confidence_threshold: 70
+
+  # Technical indicators to use
+  indicators:
+    - RSI
+    - MACD
+    - EMA
+
+  # RSI thresholds
+  rsi_oversold: 30
+  rsi_overbought: 70
+
+ai:
+  # OpenAI model to use (GPT-3.5 = 10x moins cher que GPT-4)
+  model: gpt-3.5-turbo
+
+  # Temperature for responses
+  temperature: 0.3
+
+  # Max tokens for analysis
+  max_tokens: 500
+
+  # Analysis interval (in seconds) - 10 minutes au lieu de 5
+  analysis_interval: 600
+
+dashboard:
+  # Dashboard update interval (in seconds)
+  update_interval: 5
+
+  # Number of candles to display
+  chart_candles: 100
+
+  # Enable notifications
+  notifications: true
