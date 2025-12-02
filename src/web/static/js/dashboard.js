@@ -17,6 +17,73 @@ function setupEventListeners() {
     document.getElementById('startBtn').addEventListener('click', () => startBot());
     document.getElementById('pauseBtn').addEventListener('click', () => pauseBot());
     document.getElementById('stopBtn').addEventListener('click', () => stopBot());
+
+    // AI Interval Slider
+    const slider = document.getElementById('aiIntervalSlider');
+    const valueDisplay = document.getElementById('aiIntervalValue');
+
+    slider.addEventListener('input', (e) => {
+        const seconds = parseInt(e.target.value);
+        valueDisplay.textContent = formatInterval(seconds);
+    });
+
+    slider.addEventListener('change', async (e) => {
+        const seconds = parseInt(e.target.value);
+        await updateAIInterval(seconds);
+    });
+
+    // Load current AI interval on startup
+    loadCurrentAIInterval();
+}
+
+// Format interval display
+function formatInterval(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${seconds / 60} min`;
+    return `${seconds / 3600}h`;
+}
+
+// Update AI analysis interval
+async function updateAIInterval(seconds) {
+    try {
+        const response = await fetch('/api/config/ai-interval', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interval: seconds })
+        });
+
+        if (response.ok) {
+            console.log(`AI interval updated to ${formatInterval(seconds)}`);
+            showNotification(`AI analysis interval set to ${formatInterval(seconds)}`, 'success');
+        } else {
+            throw new Error('Failed to update AI interval');
+        }
+    } catch (error) {
+        console.error('Error updating AI interval:', error);
+        showNotification('Failed to update AI interval', 'error');
+    }
+}
+
+// Load current AI interval
+async function loadCurrentAIInterval() {
+    try {
+        const response = await fetch('/api/config/ai-interval');
+        if (response.ok) {
+            const data = await response.json();
+            const slider = document.getElementById('aiIntervalSlider');
+            const valueDisplay = document.getElementById('aiIntervalValue');
+            slider.value = data.interval;
+            valueDisplay.textContent = formatInterval(data.interval);
+        }
+    } catch (error) {
+        console.error('Error loading AI interval:', error);
+    }
+}
+
+// Show notification
+function showNotification(message, type = 'info') {
+    // Simple console log for now, can be enhanced with toast notifications
+    console.log(`[${type.toUpperCase()}] ${message}`);
 }
 
 // Start auto-refresh

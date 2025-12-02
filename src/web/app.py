@@ -383,6 +383,47 @@ def create_app(config):
             logger.error(f"Error fetching live P&L: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/config/ai-interval', methods=['GET'])
+    def get_ai_interval():
+        """Get current AI analysis interval"""
+        if not trading_bot:
+            return jsonify({'error': 'Bot not initialized'}), 500
+
+        try:
+            interval = trading_bot.ai_analysis_interval
+            return jsonify({'interval': interval})
+        except Exception as e:
+            logger.error(f"Error getting AI interval: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/config/ai-interval', methods=['POST'])
+    def update_ai_interval():
+        """Update AI analysis interval in real-time"""
+        if not trading_bot:
+            return jsonify({'error': 'Bot not initialized'}), 500
+
+        try:
+            data = request.get_json()
+            interval = int(data.get('interval', 600))
+
+            # Validate interval (5 min to 1 hour)
+            if interval < 300 or interval > 3600:
+                return jsonify({'error': 'Interval must be between 300 and 3600 seconds'}), 400
+
+            # Update bot's AI analysis interval
+            trading_bot.ai_analysis_interval = interval
+            logger.info(f"AI analysis interval updated to {interval} seconds")
+
+            return jsonify({
+                'success': True,
+                'interval': interval,
+                'message': f'AI analysis interval updated to {interval}s'
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating AI interval: {e}")
+            return jsonify({'error': str(e)}), 500
+
     return app, socketio
 
 def set_trading_bot(bot):

@@ -41,6 +41,8 @@ header {
     padding: 20px 0;
     border-bottom: 2px solid var(--border-color);
     margin-bottom: 30px;
+    flex-wrap: wrap;
+    gap: 20px;
 }
 
 header h1 {
@@ -52,6 +54,71 @@ header h1 {
     display: flex;
     gap: 10px;
     align-items: center;
+}
+
+.ai-interval-control {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: var(--bg-card);
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.ai-interval-control label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.ai-interval-control input[type="range"] {
+    width: 200px;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.ai-interval-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--info);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-interval-control input[type="range"]::-webkit-slider-thumb:hover {
+    background: #2db5ff;
+    transform: scale(1.2);
+}
+
+.ai-interval-control input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--info);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.ai-interval-control input[type="range"]::-moz-range-thumb:hover {
+    background: #2db5ff;
+    transform: scale(1.2);
+}
+
+#aiIntervalValue {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--info);
+    min-width: 60px;
+    text-align: right;
 }
 
 .btn {
