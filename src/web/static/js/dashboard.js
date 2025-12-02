@@ -39,8 +39,12 @@ function setupEventListeners() {
 // Format interval display
 function formatInterval(seconds) {
     if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${seconds / 60} min`;
-    return `${seconds / 3600}h`;
+    if (seconds < 3600) {
+        const minutes = seconds / 60;
+        return minutes === 1 ? '1 min' : `${Math.floor(minutes)} min`;
+    }
+    const hours = seconds / 3600;
+    return hours === 1 ? '1h' : `${hours}h`;
 }
 
 // Update AI analysis interval

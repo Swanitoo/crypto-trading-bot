@@ -406,9 +406,9 @@ def create_app(config):
             data = request.get_json()
             interval = int(data.get('interval', 600))
 
-            # Validate interval (5 min to 1 hour)
-            if interval < 300 or interval > 3600:
-                return jsonify({'error': 'Interval must be between 300 and 3600 seconds'}), 400
+            # Validate interval (1 min to 1 hour)
+            if interval < 60 or interval > 3600:
+                return jsonify({'error': 'Interval must be between 60 and 3600 seconds'}), 400
 
             # Update bot's AI analysis interval
             trading_bot.ai_analysis_interval = interval
