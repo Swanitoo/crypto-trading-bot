@@ -91,6 +91,23 @@ def create_app(config):
             return jsonify({'error': 'Bot not initialized'}), 500
 
         positions = trading_bot.risk_manager.get_open_positions()
+
+        # Update positions with REAL-TIME prices
+        for pos in positions:
+            try:
+                ticker = trading_bot.exchange.get_ticker(pos['pair'])
+                if ticker:
+                    current_price = ticker['price']
+                    pos['current_price'] = current_price
+
+                    # Recalculate P&L with real-time price
+                    entry_price = pos['entry_price']
+                    amount = pos['amount']
+                    pos['profit_loss'] = (current_price - entry_price) * amount
+                    pos['profit_loss_percent'] = ((current_price / entry_price) - 1) * 100
+            except Exception as e:
+                logger.warning(f"Could not update price for {pos['pair']}: {e}")
+
         return jsonify(positions)
 
     @app.route('/api/ai_analysis')
@@ -356,21 +373,39 @@ def create_app(config):
 
             positions_data = []
             for pos in positions:
-                total_pnl += pos['profit_loss']
+                # Fetch REAL-TIME price from exchange
+                pair = pos['pair']
+                try:
+                    ticker = trading_bot.exchange.get_ticker(pair)
+                    current_price = ticker['price'] if ticker else pos.get('current_price', pos['entry_price'])
+
+                    # Recalculate P&L with real-time price
+                    entry_price = pos['entry_price']
+                    amount = pos['amount']
+                    profit_loss = (current_price - entry_price) * amount
+                    profit_loss_percent = ((current_price / entry_price) - 1) * 100
+
+                except Exception as e:
+                    logger.warning(f"Could not fetch real-time price for {pair}: {e}")
+                    current_price = pos.get('current_price', pos['entry_price'])
+                    profit_loss = pos['profit_loss']
+                    profit_loss_percent = pos['profit_loss_percent']
+
+                total_pnl += profit_loss
                 positions_data.append({
-                    'pair': pos['pair'],
+                    'pair': pair,
                     'entry_price': pos['entry_price'],
-                    'current_price': pos.get('current_price', pos['entry_price']),
-                    'amount': pos['amount'],
-                    'profit_loss': pos['profit_loss'],
-                    'profit_loss_percent': pos['profit_loss_percent'],
+                    'current_price': current_price,
+                    'amount': amount,
+                    'profit_loss': profit_loss,
+                    'profit_loss_percent': profit_loss_percent,
                     'stop_loss': pos.get('stop_loss'),
                     'take_profit': pos.get('take_profit')
                 })
 
             # Calculate average P&L percent
             if position_count > 0:
-                total_pnl_percent = sum(p['profit_loss_percent'] for p in positions) / position_count
+                total_pnl_percent = sum(p['profit_loss_percent'] for p in positions_data) / position_count
 
             return jsonify({
                 'total_pnl': total_pnl,

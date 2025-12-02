@@ -94,7 +94,7 @@ function showNotification(message, type = 'info') {
 function startAutoRefresh() {
     updateInterval = setInterval(() => {
         loadAllData();
-    }, 10000); // Refresh every 10 seconds (optimisé)
+    }, 1000); // Refresh every 1 second (ultra-rapide pour P&L en direct)
 }
 
 // Load all data
