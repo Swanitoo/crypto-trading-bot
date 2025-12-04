@@ -535,10 +535,43 @@ class TradingBot:
                 # Get current price to calculate current P&L
                 ticker = self.exchange.get_ticker(pair)
                 if not ticker:
-                    logger.warning(f"⚠️  Could not fetch current price for {pair}, skipping restore")
+                    logger.warning(f"⚠️  Could not fetch current price for {pair} - closing position (pair may be delisted)")
+                    trade.status = 'closed'
+                    trade.profit_loss = 0.0
+                    trade.profit_loss_percent = 0.0
+                    trade.notes = f"{trade.notes or ''} | Auto-closed: Pair unavailable".strip()
+                    closed_count += 1
                     continue
 
                 current_price = ticker['price']
+
+                # Calculate current P&L to check if position should be auto-closed
+                entry_price = trade.price
+                pnl_percent = ((current_price - entry_price) / entry_price) * 100
+
+                # Auto-close positions with massive losses (> -20%) - likely dead coins
+                if pnl_percent < -20:
+                    logger.warning(f"⚠️  {pair} has {pnl_percent:.2f}% loss - auto-closing dead position")
+                    trade.status = 'closed'
+                    trade.exit_price = current_price
+                    trade.profit_loss = (current_price - entry_price) * trade.amount
+                    trade.profit_loss_percent = pnl_percent
+                    trade.notes = f"{trade.notes or ''} | Auto-closed: Dead coin ({pnl_percent:.2f}%)".strip()
+                    closed_count += 1
+                    logger.info(f"   ❌ Closed dead position: {pair} (loss: {pnl_percent:.2f}%)")
+                    continue
+
+                # Auto-close positions for pairs not in current trading list
+                if pair not in self.pairs:
+                    logger.warning(f"⚠️  {pair} not in current trading pairs - auto-closing")
+                    trade.status = 'closed'
+                    trade.exit_price = current_price
+                    trade.profit_loss = (current_price - entry_price) * trade.amount
+                    trade.profit_loss_percent = pnl_percent
+                    trade.notes = f"{trade.notes or ''} | Auto-closed: Not in trading list".strip()
+                    closed_count += 1
+                    logger.info(f"   ❌ Closed position: {pair} (not in trading list)")
+                    continue
 
                 # Restore position in risk manager
                 position = self.risk_manager.open_position(
