@@ -105,6 +105,9 @@ def create_app(config):
                     amount = pos['amount']
                     pos['profit_loss'] = (current_price - entry_price) * amount
                     pos['profit_loss_percent'] = ((current_price / entry_price) - 1) * 100
+
+                    # Add current value in USDT
+                    pos['current_value_usd'] = current_price * amount
             except Exception as e:
                 logger.warning(f"Could not update price for {pos['pair']}: {e}")
 
@@ -457,6 +460,47 @@ def create_app(config):
 
         except Exception as e:
             logger.error(f"Error updating AI interval: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/config/trade-amount', methods=['GET'])
+    def get_trade_amount():
+        """Get current trade amount"""
+        if not trading_bot:
+            return jsonify({'error': 'Bot not initialized'}), 500
+
+        try:
+            amount = trading_bot.trade_amount
+            return jsonify({'amount': amount})
+        except Exception as e:
+            logger.error(f"Error getting trade amount: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/config/trade-amount', methods=['POST'])
+    def update_trade_amount():
+        """Update trade amount in real-time"""
+        if not trading_bot:
+            return jsonify({'error': 'Bot not initialized'}), 500
+
+        try:
+            data = request.get_json()
+            amount = float(data.get('amount', 5))
+
+            # Validate amount (1 to 100 USDT)
+            if amount < 1 or amount > 100:
+                return jsonify({'error': 'Amount must be between 1 and 100 USDT'}), 400
+
+            # Update bot's trade amount
+            trading_bot.trade_amount = amount
+            logger.info(f"Trade amount updated to ${amount:.2f}")
+
+            return jsonify({
+                'success': True,
+                'amount': amount,
+                'message': f'Max per trade updated to ${amount:.2f}'
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating trade amount: {e}")
             return jsonify({'error': str(e)}), 500
 
     return app, socketio

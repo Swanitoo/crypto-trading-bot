@@ -287,8 +287,9 @@ class TradingBot:
             return
 
         pnl_color = Fore.GREEN if position['profit_loss'] > 0 else Fore.RED
-        logger.info(f"   📈 Open Position: "
-                   f"{pnl_color}${position['profit_loss']:.2f} ({position['profit_loss_percent']:+.2f}%){Style.RESET_ALL}")
+        cost_usd = position.get('total_cost_usd', 0)
+        logger.info(f"   📈 Open Position: ${cost_usd:.2f} USDT invested | "
+                   f"{pnl_color}P&L: ${position['profit_loss']:.2f} ({position['profit_loss_percent']:+.2f}%){Style.RESET_ALL}")
 
         # Check if partial TP triggered
         if position.get('partial_tp_triggered', False):
@@ -353,8 +354,27 @@ class TradingBot:
     def _open_position(self, pair: str, entry_price: float, signal: Dict):
         """Open a new trading position with adaptive TP/SL"""
         try:
+            # Get available balance
+            available_balance = self.exchange.get_balance('USDT')
+
+            # Adapt trade amount to available balance
+            trade_amount = self.trade_amount
+
+            # Safety margin: keep at least 1 USDT available
+            max_trade_amount = max(0, available_balance - 1.0)
+
+            if max_trade_amount < 1.0:
+                logger.warning(f"❌ Insufficient balance: {available_balance:.2f} USDT (need at least 2 USDT)")
+                return
+
+            # Use the smaller of: configured amount or available balance
+            trade_amount = min(trade_amount, max_trade_amount)
+
+            if trade_amount < self.trade_amount:
+                logger.info(f"   💰 Adapted trade amount: ${trade_amount:.2f} (available: ${available_balance:.2f})")
+
             # Execute buy order
-            order = self.exchange.create_market_buy_order(pair, self.trade_amount)
+            order = self.exchange.create_market_buy_order(pair, trade_amount)
 
             if not order:
                 logger.error(f"Failed to create buy order for {pair}")
@@ -367,6 +387,7 @@ class TradingBot:
             market_context = signal.get('market_context', 'unknown')
 
             logger.info(f"   📊 Context: {market_context} | TP: {take_profit_percent}% | SL: {stop_loss_percent}%")
+            logger.info(f"   💰 Invested: ${trade_amount:.2f} USDT | Amount: {order['amount']:.8f} {pair.split('/')[0]}")
 
             # Open position in risk manager with adaptive TP/SL and fees
             amount = order['amount']
@@ -377,7 +398,7 @@ class TradingBot:
                 side='long',
                 custom_tp_percent=take_profit_percent,
                 custom_sl_percent=stop_loss_percent,
-                trade_amount_usd=self.trade_amount
+                trade_amount_usd=trade_amount  # Use adapted amount
             )
 
             # Save trade to database
@@ -387,7 +408,7 @@ class TradingBot:
                     side='buy',
                     amount=amount,
                     price=entry_price,
-                    total=self.trade_amount,
+                    total=trade_amount,  # Use adapted amount
                     status='open',
                     strategy=signal.get('reasoning', 'N/A'),
                     ai_confidence=signal.get('confidence', 0),

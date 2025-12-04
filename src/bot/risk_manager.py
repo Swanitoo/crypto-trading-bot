@@ -379,6 +379,7 @@ class RiskManager:
             'side': position.side,
             'entry_price': position.get_average_entry_price(),
             'amount': position.get_total_amount(),
+            'total_cost_usd': position.get_total_cost(),  # Montant investi en USDT
             'stop_loss': position.stop_loss,
             'take_profit': position.take_profit,
             'highest_price': position.highest_price,

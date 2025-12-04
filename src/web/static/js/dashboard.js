@@ -32,8 +32,23 @@ function setupEventListeners() {
         await updateAIInterval(seconds);
     });
 
-    // Load current AI interval on startup
+    // Trade amount slider
+    const tradeAmountSlider = document.getElementById('tradeAmountSlider');
+    const tradeAmountDisplay = document.getElementById('tradeAmountValue');
+
+    tradeAmountSlider.addEventListener('input', (e) => {
+        const amount = parseInt(e.target.value);
+        tradeAmountDisplay.textContent = `$${amount}`;
+    });
+
+    tradeAmountSlider.addEventListener('change', async (e) => {
+        const amount = parseInt(e.target.value);
+        await updateTradeAmount(amount);
+    });
+
+    // Load current AI interval and trade amount on startup
     loadCurrentAIInterval();
+    loadCurrentTradeAmount();
 }
 
 // Format interval display
@@ -81,6 +96,43 @@ async function loadCurrentAIInterval() {
         }
     } catch (error) {
         console.error('Error loading AI interval:', error);
+    }
+}
+
+// Update trade amount
+async function updateTradeAmount(amount) {
+    try {
+        const response = await fetch('/api/config/trade-amount', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: amount })
+        });
+
+        if (response.ok) {
+            console.log(`Trade amount updated to $${amount}`);
+            showNotification(`Max per trade set to $${amount}`, 'success');
+        } else {
+            throw new Error('Failed to update trade amount');
+        }
+    } catch (error) {
+        console.error('Error updating trade amount:', error);
+        showNotification('Failed to update trade amount', 'error');
+    }
+}
+
+// Load current trade amount
+async function loadCurrentTradeAmount() {
+    try {
+        const response = await fetch('/api/config/trade-amount');
+        if (response.ok) {
+            const data = await response.json();
+            const slider = document.getElementById('tradeAmountSlider');
+            const valueDisplay = document.getElementById('tradeAmountValue');
+            slider.value = data.amount;
+            valueDisplay.textContent = `$${data.amount}`;
+        }
+    } catch (error) {
+        console.error('Error loading trade amount:', error);
     }
 }
 
@@ -210,7 +262,10 @@ async function loadTrades() {
                     <td><strong>${trade.pair}</strong></td>
                     <td class="${sideClass}">${trade.side.toUpperCase()}</td>
                     <td>$${trade.price.toFixed(2)}</td>
-                    <td>${trade.amount.toFixed(6)}</td>
+                    <td>
+                        ${trade.amount.toFixed(6)}<br>
+                        <small style="color: #888;">($${trade.total.toFixed(2)} USDT)</small>
+                    </td>
                     <td class="${pnlClass}">
                         ${trade.profit_loss >= 0 ? '+' : ''}$${trade.profit_loss.toFixed(2)}
                         (${trade.profit_loss_percent >= 0 ? '+' : ''}${trade.profit_loss_percent.toFixed(2)}%)
@@ -240,12 +295,22 @@ async function loadPositions() {
 
         container.innerHTML = positions.map(pos => {
             const pnlClass = pos.profit_loss >= 0 ? 'profit' : 'loss';
+            const investedUsd = pos.total_cost_usd || 0;
+            const currentValueUsd = pos.current_value_usd || investedUsd;
 
             return `
                 <div class="position-item ${pnlClass}">
                     <div>
                         <div class="position-label">Pair</div>
                         <div class="position-value">${pos.pair}</div>
+                    </div>
+                    <div>
+                        <div class="position-label">Invested</div>
+                        <div class="position-value">$${investedUsd.toFixed(2)}</div>
+                    </div>
+                    <div>
+                        <div class="position-label">Current Value</div>
+                        <div class="position-value">$${currentValueUsd.toFixed(2)}</div>
                     </div>
                     <div>
                         <div class="position-label">Entry</div>
