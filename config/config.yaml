@@ -3,7 +3,7 @@ trading:
   mode: paper
 
   # Initial balance (in USDT or EUR)
-  initial_balance: 10
+  initial_balance: 100
 
   # Trading pairs to monitor
   # Option 1: Liste manuelle

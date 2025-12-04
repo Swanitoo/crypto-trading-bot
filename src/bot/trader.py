@@ -38,7 +38,8 @@ class TradingBot:
         mode = config['trading']['mode']
         if mode == 'paper':
             self.exchange = PaperTradingClient(
-                initial_balance=config['trading']['initial_balance']
+                initial_balance=config['trading']['initial_balance'],
+                db_session=self.db_session
             )
         else:
             self.exchange = BinanceClient(

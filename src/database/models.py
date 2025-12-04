@@ -137,6 +137,24 @@ class PriceSnapshot(Base):
             'snapshot_type': self.snapshot_type
         }
 
+class PaperWallet(Base):
+    __tablename__ = 'paper_wallet'
+
+    id = Column(Integer, primary_key=True)
+    currency = Column(String(20), nullable=False, unique=True)
+    balance = Column(Float, nullable=False, default=0.0)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    initial_balance = Column(Float, nullable=False, default=0.0)  # Pour tracking
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'currency': self.currency,
+            'balance': self.balance,
+            'last_updated': self.last_updated.isoformat() if self.last_updated else None,
+            'initial_balance': self.initial_balance
+        }
+
 # Database initialization
 engine = None
 Session = None

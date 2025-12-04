@@ -184,8 +184,8 @@ class BinanceClient:
 class PaperTradingClient:
     """Paper trading simulator - no real money involved"""
 
-    def __init__(self, initial_balance: float = 100.0):
-        self.balance = {'USDT': initial_balance}
+    def __init__(self, initial_balance: float = 100.0, db_session=None):
+        self.db_session = db_session
         self.positions = {}
         self.order_history = []
 
@@ -195,7 +195,11 @@ class PaperTradingClient:
             'timeout': 15000  # 15 secondes timeout
         })
 
-        logger.info(f"📄 Paper trading initialized with {initial_balance} USDT")
+        # Load or initialize wallet from database
+        self.balance = self._load_wallet_from_db(initial_balance)
+
+        logger.info(f"📄 Paper trading initialized with {self.balance.get('USDT', 0):.2f} USDT")
+        logger.info(f"   Total wallet value: {self._calculate_total_value():.2f} USDT")
 
     def get_balance(self, currency: str = 'USDT') -> float:
         return self.balance.get(currency, 0.0)
@@ -283,6 +287,10 @@ class PaperTradingClient:
 
             self.order_history.append(order)
             logger.info(f"📄 Paper BUY: {amount_crypto:.6f} {base_currency} at {price:.2f} USDT")
+
+            # Save wallet to database
+            self._save_wallet_to_db()
+
             return order
 
         except Exception as e:
@@ -333,11 +341,114 @@ class PaperTradingClient:
 
             self.order_history.append(order)
             logger.info(f"📄 Paper SELL: {amount:.6f} {base_currency} at {price:.2f} USDT")
+
+            # Save wallet to database
+            self._save_wallet_to_db()
+
             return order
 
         except Exception as e:
             logger.error(f"Error in paper sell order: {e}")
             return None
+
+    def _load_wallet_from_db(self, initial_balance: float) -> Dict[str, float]:
+        """Load wallet state from database or initialize it"""
+        from ..database.models import PaperWallet
+
+        wallet = {}
+
+        if not self.db_session:
+            logger.warning("⚠️  No database session provided - wallet won't persist between restarts")
+            return {'USDT': initial_balance}
+
+        try:
+            # Load all currencies from database
+            wallet_entries = self.db_session.query(PaperWallet).all()
+
+            if not wallet_entries:
+                # First time - initialize wallet with USDT
+                logger.info(f"💰 Initializing paper wallet with {initial_balance} USDT")
+                usdt_entry = PaperWallet(
+                    currency='USDT',
+                    balance=initial_balance,
+                    initial_balance=initial_balance
+                )
+                self.db_session.add(usdt_entry)
+                self.db_session.commit()
+                wallet['USDT'] = initial_balance
+            else:
+                # Load existing wallet
+                for entry in wallet_entries:
+                    wallet[entry.currency] = entry.balance
+
+                logger.info(f"💰 Loaded paper wallet from database:")
+                for currency, balance in wallet.items():
+                    if balance > 0:
+                        logger.info(f"   {currency}: {balance:.8f}")
+
+            return wallet
+
+        except Exception as e:
+            logger.error(f"Error loading wallet from database: {e}")
+            logger.warning(f"⚠️  Falling back to initial balance: {initial_balance} USDT")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+            return {'USDT': initial_balance}
+
+    def _save_wallet_to_db(self):
+        """Save current wallet state to database"""
+        from ..database.models import PaperWallet
+
+        if not self.db_session:
+            return
+
+        try:
+            for currency, balance in self.balance.items():
+                # Check if entry exists
+                entry = self.db_session.query(PaperWallet).filter(
+                    PaperWallet.currency == currency
+                ).first()
+
+                if entry:
+                    # Update existing entry
+                    entry.balance = balance
+                else:
+                    # Create new entry
+                    entry = PaperWallet(
+                        currency=currency,
+                        balance=balance,
+                        initial_balance=0.0  # Only USDT has initial balance set
+                    )
+                    self.db_session.add(entry)
+
+            self.db_session.commit()
+
+        except Exception as e:
+            logger.error(f"Error saving wallet to database: {e}")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+
+    def _calculate_total_value(self) -> float:
+        """Calculate total wallet value in USDT"""
+        total = self.balance.get('USDT', 0.0)
+
+        for currency, amount in self.balance.items():
+            if currency == 'USDT' or amount == 0:
+                continue
+
+            try:
+                pair = f"{currency}/USDT"
+                ticker = self.get_ticker(pair)
+                if ticker:
+                    total += amount * ticker['price']
+            except:
+                pass
+
+        return total
 
     def get_order_book(self, pair: str, limit: int = 20) -> Optional[Dict]:
         """Get real order book data"""
