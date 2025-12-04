@@ -8,7 +8,7 @@ from ..exchange.binance_client import BinanceClient, PaperTradingClient
 from ..ai.market_analyzer import MarketAnalyzer
 from .strategy import TradingStrategy
 from .risk_manager import RiskManager
-from ..database.models import init_db, Trade, Balance, AIAnalysis
+from ..database.models import init_db, Trade, Balance, AIAnalysis, BotSession, PriceSnapshot
 from ..utils.market_utils import get_top_pairs
 
 logger = logging.getLogger(__name__)
@@ -88,9 +88,19 @@ class TradingBot:
         # State
         self.last_ai_analysis = {}
         self.last_ai_analysis_time = {}
+        self.current_session = None
+
+        # Create new bot session
+        self._create_bot_session()
 
         # Synchronize positions from database (in case of bot restart)
         self._sync_positions_from_db()
+
+        # Analyze recovery context if there was downtime
+        self._analyze_recovery_context()
+
+        # Verify wallet state (for real trading mode)
+        self._verify_wallet_state()
 
         # Initial balance snapshot
         self._save_balance_snapshot()
@@ -116,17 +126,26 @@ class TradingBot:
 
         except KeyboardInterrupt:
             logger.info("\n⏸️  Bot stopped by user")
+            self.stop('keyboard_interrupt')
+        except ConnectionError as e:
+            logger.error(f"❌ Connection error: {e}")
+            self.stop('network_loss')
         except Exception as e:
             logger.error(f"❌ Error in main loop: {e}", exc_info=True)
+            self.stop('crash')
         finally:
-            self.stop()
+            if self.running:  # If not already stopped
+                self.stop('unknown')
 
-    def stop(self):
+    def stop(self, reason='normal'):
         """Stop the trading bot"""
         self.running = False
         logger.info(f"\n{Fore.YELLOW}{'='*60}")
         logger.info(f"🛑 TRADING BOT STOPPED")
         logger.info(f"{'='*60}{Style.RESET_ALL}\n")
+
+        # Close current session
+        self._close_bot_session(reason)
 
         # Close database session
         if self.db_session:
@@ -178,6 +197,10 @@ class TradingBot:
         if not ticker:
             logger.warning(f"Could not fetch ticker for {pair}")
             return
+
+        # Save price snapshot if we have an open position (for recovery analysis)
+        if self.risk_manager.has_position(pair):
+            self._save_price_snapshot(pair, ticker['price'], 'periodic')
 
         ohlcv = self.exchange.get_ohlcv(pair, timeframe='1h', limit=100)
         if not ohlcv or len(ohlcv) < 50:
@@ -653,6 +676,358 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Error saving balance snapshot: {e}")
             # Rollback en cas d'erreur pour éviter session bloquée
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+
+    def _create_bot_session(self):
+        """Create a new bot session record"""
+        try:
+            # Check for any running sessions (crashed sessions)
+            running_sessions = self.db_session.query(BotSession).filter(
+                BotSession.status == 'running'
+            ).all()
+
+            # Mark previous running sessions as crashed
+            for session in running_sessions:
+                session.status = 'crashed'
+                session.stop_reason = 'crash'
+                session.end_time = datetime.utcnow()
+                session.positions_at_end = len(self.risk_manager.positions)
+
+            # Get open positions count
+            open_trades_count = self.db_session.query(Trade).filter(
+                Trade.status == 'open',
+                Trade.side == 'buy'
+            ).count()
+
+            # Create new session
+            self.current_session = BotSession(
+                start_time=datetime.utcnow(),
+                status='running',
+                positions_at_start=open_trades_count,
+                context_analyzed=False
+            )
+
+            self.db_session.add(self.current_session)
+            self.db_session.commit()
+
+            logger.info(f"📋 New bot session created (ID: {self.current_session.id})")
+            if running_sessions:
+                logger.warning(f"⚠️  Marked {len(running_sessions)} previous sessions as crashed")
+
+        except Exception as e:
+            logger.error(f"Error creating bot session: {e}")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+
+    def _close_bot_session(self, reason='normal'):
+        """Close the current bot session"""
+        try:
+            if self.current_session:
+                self.current_session.end_time = datetime.utcnow()
+                self.current_session.status = 'stopped'
+                self.current_session.stop_reason = reason
+                self.current_session.positions_at_end = len(self.risk_manager.positions)
+
+                # Calculate downtime
+                if self.current_session.start_time:
+                    downtime = (datetime.utcnow() - self.current_session.start_time).total_seconds()
+                    self.current_session.downtime_seconds = int(downtime)
+
+                self.db_session.commit()
+                logger.info(f"📋 Bot session closed (ID: {self.current_session.id}, reason: {reason})")
+
+        except Exception as e:
+            logger.error(f"Error closing bot session: {e}")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+
+    def _analyze_recovery_context(self):
+        """
+        Analyze market context after bot restart to understand what happened during downtime.
+        This helps the bot make informed decisions based on recent market movements.
+        """
+        try:
+            # Get the last session (before current one)
+            last_session = self.db_session.query(BotSession).filter(
+                BotSession.id != self.current_session.id
+            ).order_by(BotSession.end_time.desc()).first()
+
+            if not last_session or not last_session.end_time:
+                logger.info("📊 No previous session found - first run or clean start")
+                if self.current_session:
+                    self.current_session.context_analyzed = True
+                    self.current_session.recovery_notes = "First run - no recovery needed"
+                    self.db_session.commit()
+                return
+
+            # Calculate downtime
+            downtime = (datetime.utcnow() - last_session.end_time).total_seconds()
+            downtime_minutes = downtime / 60
+            downtime_hours = downtime / 3600
+
+            logger.info(f"\n{'='*60}")
+            logger.info(f"🔄 RECOVERY CONTEXT ANALYSIS")
+            logger.info(f"{'='*60}")
+            logger.info(f"⏱️  Bot was offline for: {downtime_hours:.2f} hours ({downtime_minutes:.1f} minutes)")
+            logger.info(f"📅 Last session ended: {last_session.end_time}")
+            logger.info(f"❓ Stop reason: {last_session.stop_reason or 'unknown'}")
+
+            recovery_notes = []
+            recovery_notes.append(f"Downtime: {downtime_hours:.2f}h")
+            recovery_notes.append(f"Last stop: {last_session.stop_reason or 'unknown'}")
+
+            # Get all open positions
+            open_positions = list(self.risk_manager.positions.keys())
+
+            if not open_positions:
+                logger.info("✅ No open positions - ready to trade")
+                recovery_notes.append("No positions to recover")
+                if self.current_session:
+                    self.current_session.context_analyzed = True
+                    self.current_session.recovery_notes = " | ".join(recovery_notes)
+                    self.db_session.commit()
+                return
+
+            logger.info(f"\n📊 Analyzing {len(open_positions)} open position(s)...")
+
+            # Analyze each position
+            for pair in open_positions:
+                position = self.risk_manager.positions[pair]
+
+                # Get current price
+                ticker = self.exchange.get_ticker(pair)
+                if not ticker:
+                    logger.warning(f"⚠️  Could not fetch price for {pair}")
+                    continue
+
+                current_price = ticker['price']
+
+                # Calculate price movement during downtime
+                entry_price = position.entry_price
+                price_change = ((current_price - entry_price) / entry_price) * 100
+
+                # Get price snapshots during downtime if available
+                price_history = self.db_session.query(PriceSnapshot).filter(
+                    PriceSnapshot.pair == pair,
+                    PriceSnapshot.timestamp >= last_session.end_time,
+                    PriceSnapshot.timestamp <= datetime.utcnow()
+                ).order_by(PriceSnapshot.timestamp).all()
+
+                # Analyze price movements
+                if price_history:
+                    prices = [snap.price for snap in price_history]
+                    max_price = max(prices)
+                    min_price = min(prices)
+                    volatility = ((max_price - min_price) / entry_price) * 100
+
+                    logger.info(f"\n   {pair}:")
+                    logger.info(f"      Entry: ${entry_price:.4f}")
+                    logger.info(f"      Current: ${current_price:.4f} ({price_change:+.2f}%)")
+                    logger.info(f"      High during downtime: ${max_price:.4f}")
+                    logger.info(f"      Low during downtime: ${min_price:.4f}")
+                    logger.info(f"      Volatility: {volatility:.2f}%")
+
+                    recovery_notes.append(f"{pair}: {price_change:+.2f}% (vol: {volatility:.1f}%)")
+
+                    # Check if TP or SL was hit during downtime
+                    if position.take_profit and max_price >= position.take_profit:
+                        logger.warning(f"      ⚠️  Take profit (${position.take_profit:.4f}) was likely hit during downtime!")
+                        recovery_notes.append(f"{pair}: TP likely hit")
+
+                    if position.stop_loss and min_price <= position.stop_loss:
+                        logger.warning(f"      ⚠️  Stop loss (${position.stop_loss:.4f}) was likely hit during downtime!")
+                        recovery_notes.append(f"{pair}: SL likely hit")
+                else:
+                    logger.info(f"\n   {pair}:")
+                    logger.info(f"      Entry: ${entry_price:.4f}")
+                    logger.info(f"      Current: ${current_price:.4f} ({price_change:+.2f}%)")
+                    recovery_notes.append(f"{pair}: {price_change:+.2f}%")
+
+                # Save current price snapshot for future analysis
+                snapshot = PriceSnapshot(
+                    pair=pair,
+                    price=current_price,
+                    snapshot_type='recovery'
+                )
+                self.db_session.add(snapshot)
+
+                # If AI is enabled, get fresh analysis for this position
+                if self.ai_analyzer and downtime_minutes > 30:  # Only if offline > 30 min
+                    logger.info(f"      🤖 Getting fresh AI analysis...")
+                    try:
+                        # Get market data
+                        ohlcv = self.exchange.get_ohlcv(pair)
+                        if ohlcv and len(ohlcv) > 0:
+                            # Calculate indicators
+                            indicators = self.strategy.calculate_indicators(ohlcv)
+
+                            # Get AI analysis
+                            analysis = self.ai_analyzer.analyze_market(
+                                pair=pair,
+                                ohlcv=ohlcv,
+                                indicators=indicators
+                            )
+
+                            if analysis:
+                                logger.info(f"      AI recommendation: {analysis.recommendation.upper()} (confidence: {analysis.confidence}%)")
+                                logger.info(f"      AI reasoning: {analysis.reasoning[:100]}...")
+
+                                # If AI strongly recommends selling, add warning
+                                if analysis.recommendation == 'sell' and analysis.confidence >= 70:
+                                    logger.warning(f"      ⚠️  AI recommends SELLING this position!")
+                                    recovery_notes.append(f"{pair}: AI says SELL ({analysis.confidence}%)")
+
+                                # Cache the analysis
+                                self.last_ai_analysis[pair] = analysis
+                                self.last_ai_analysis_time[pair] = time.time()
+
+                    except Exception as e:
+                        logger.error(f"      Error getting AI analysis: {e}")
+
+            # Update session record
+            if self.current_session:
+                self.current_session.context_analyzed = True
+                self.current_session.recovery_notes = " | ".join(recovery_notes)
+                self.db_session.commit()
+
+            logger.info(f"\n✅ Recovery context analysis complete")
+            logger.info(f"{'='*60}\n")
+
+        except Exception as e:
+            logger.error(f"Error analyzing recovery context: {e}")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+
+    def _verify_wallet_state(self):
+        """
+        Verify wallet state with actual exchange (for real trading mode).
+        Compares expected holdings from database with actual exchange balance.
+        """
+        try:
+            # Only verify for real trading mode (not paper trading)
+            if hasattr(self.exchange, 'balance'):  # Paper trading mode
+                logger.info("📊 Paper trading mode - skipping wallet verification")
+                return
+
+            logger.info("\n💰 Verifying wallet state with Binance...")
+
+            # Get actual balances from exchange
+            try:
+                account_info = self.exchange.client.get_account()
+            except Exception as e:
+                logger.error(f"❌ Failed to fetch account info from Binance: {e}")
+                return
+
+            actual_balances = {}
+            for balance in account_info['balances']:
+                asset = balance['asset']
+                free = float(balance['free'])
+                locked = float(balance['locked'])
+                total = free + locked
+
+                if total > 0:
+                    actual_balances[asset] = {
+                        'free': free,
+                        'locked': locked,
+                        'total': total
+                    }
+
+            # Calculate expected holdings from open positions
+            expected_holdings = {}
+            open_trades = self.db_session.query(Trade).filter(
+                Trade.status == 'open',
+                Trade.side == 'buy'
+            ).all()
+
+            for trade in open_trades:
+                base_currency = trade.pair.split('/')[0]
+                if base_currency not in expected_holdings:
+                    expected_holdings[base_currency] = 0.0
+                expected_holdings[base_currency] += trade.amount
+
+            # Compare expected vs actual
+            discrepancies = []
+            logger.info(f"\n   Expected holdings from database:")
+            for currency, amount in expected_holdings.items():
+                actual_amount = actual_balances.get(currency, {}).get('total', 0.0)
+                diff_percent = 0
+                if amount > 0:
+                    diff_percent = ((actual_amount - amount) / amount) * 100
+
+                logger.info(f"      {currency}: Expected {amount:.8f}, Actual {actual_amount:.8f}")
+
+                # Flag significant discrepancies (> 1%)
+                if abs(diff_percent) > 1.0:
+                    discrepancies.append(f"{currency}: {diff_percent:+.2f}%")
+                    logger.warning(f"      ⚠️  Discrepancy: {diff_percent:+.2f}%")
+
+            # Show USDT balance
+            usdt_balance = actual_balances.get('USDT', {}).get('free', 0.0)
+            logger.info(f"\n   USDT available: ${usdt_balance:.2f}")
+
+            if discrepancies:
+                logger.warning(f"\n⚠️  Found {len(discrepancies)} wallet discrepancies:")
+                for disc in discrepancies:
+                    logger.warning(f"      {disc}")
+                logger.warning(f"   Consider manual reconciliation if needed")
+            else:
+                logger.info(f"✅ Wallet state verified - all holdings match")
+
+        except Exception as e:
+            logger.error(f"Error verifying wallet state: {e}")
+
+    def _save_price_snapshot(self, pair: str, price: float, snapshot_type: str = 'periodic'):
+        """
+        Save a price snapshot to database for recovery analysis.
+        Only saves snapshots periodically to avoid database bloat.
+        """
+        try:
+            # Check if we need to save (avoid saving too frequently)
+            if not hasattr(self, '_last_snapshot_time'):
+                self._last_snapshot_time = {}
+
+            current_time = time.time()
+            last_snapshot = self._last_snapshot_time.get(pair, 0)
+
+            # Save snapshot every 5 minutes (300 seconds) for periodic snapshots
+            # Always save for recovery or critical snapshots
+            if snapshot_type == 'periodic' and (current_time - last_snapshot) < 300:
+                return
+
+            # Create snapshot
+            snapshot = PriceSnapshot(
+                pair=pair,
+                price=price,
+                snapshot_type=snapshot_type
+            )
+
+            self.db_session.add(snapshot)
+            self.db_session.commit()
+
+            self._last_snapshot_time[pair] = current_time
+
+            # Clean up old snapshots (keep only last 7 days)
+            from datetime import timedelta
+            cutoff_date = datetime.utcnow() - timedelta(days=7)
+            old_snapshots = self.db_session.query(PriceSnapshot).filter(
+                PriceSnapshot.timestamp < cutoff_date
+            ).delete()
+
+            if old_snapshots > 0:
+                self.db_session.commit()
+                logger.debug(f"Cleaned up {old_snapshots} old price snapshots")
+
+        except Exception as e:
+            logger.error(f"Error saving price snapshot: {e}")
             try:
                 self.db_session.rollback()
             except:

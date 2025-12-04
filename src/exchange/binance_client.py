@@ -2,6 +2,7 @@ import ccxt
 from typing import Dict, List, Optional
 from datetime import datetime
 import logging
+from ..utils.retry import retry_on_failure, ConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +34,28 @@ class BinanceClient:
             logger.info("⚠️  Binance client initialized in LIVE mode")
 
         self.testnet = testnet
+        self.connection_manager = ConnectionManager()
 
+    @retry_on_failure(max_attempts=3, initial_delay=1.0, exceptions=(ccxt.NetworkError, ccxt.ExchangeNotAvailable))
     def get_balance(self, currency: str = 'USDT') -> float:
         """Get balance for a specific currency"""
         try:
             balance = self.exchange.fetch_balance()
+            self.connection_manager.record_success()
             return balance['free'].get(currency, 0.0)
+        except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
+            self.connection_manager.record_failure()
+            raise
         except Exception as e:
             logger.error(f"Error fetching balance: {e}")
             return 0.0
 
+    @retry_on_failure(max_attempts=3, initial_delay=1.0, exceptions=(ccxt.NetworkError, ccxt.ExchangeNotAvailable))
     def get_ticker(self, pair: str) -> Optional[Dict]:
         """Get current ticker information for a pair"""
         try:
             ticker = self.exchange.fetch_ticker(pair)
+            self.connection_manager.record_success()
             return {
                 'symbol': ticker['symbol'],
                 'price': ticker['last'],
@@ -56,10 +65,14 @@ class BinanceClient:
                 'change_24h': ticker['percentage'],
                 'timestamp': datetime.fromtimestamp(ticker['timestamp'] / 1000)
             }
+        except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
+            self.connection_manager.record_failure()
+            raise
         except Exception as e:
             logger.error(f"Error fetching ticker for {pair}: {e}")
             return None
 
+    @retry_on_failure(max_attempts=3, initial_delay=1.0, exceptions=(ccxt.NetworkError, ccxt.ExchangeNotAvailable))
     def get_ohlcv(self, pair: str, timeframe: str = '1h', limit: int = 100) -> List[Dict]:
         """
         Get OHLCV (candlestick) data
@@ -71,6 +84,7 @@ class BinanceClient:
         """
         try:
             ohlcv = self.exchange.fetch_ohlcv(pair, timeframe, limit=limit)
+            self.connection_manager.record_success()
             return [
                 {
                     'timestamp': datetime.fromtimestamp(candle[0] / 1000),
@@ -82,6 +96,9 @@ class BinanceClient:
                 }
                 for candle in ohlcv
             ]
+        except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
+            self.connection_manager.record_failure()
+            raise
         except Exception as e:
             logger.error(f"Error fetching OHLCV for {pair}: {e}")
             return []

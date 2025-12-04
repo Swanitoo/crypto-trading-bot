@@ -91,6 +91,52 @@ class AIAnalysis(Base):
             'reasoning': self.reasoning
         }
 
+class BotSession(Base):
+    __tablename__ = 'bot_sessions'
+
+    id = Column(Integer, primary_key=True)
+    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    status = Column(String(20), default='running')  # running, stopped, crashed
+    stop_reason = Column(String(50))  # normal, crash, network_loss, keyboard_interrupt
+    positions_at_start = Column(Integer, default=0)
+    positions_at_end = Column(Integer, nullable=True)
+    context_analyzed = Column(Boolean, default=False)
+    downtime_seconds = Column(Integer, nullable=True)
+    recovery_notes = Column(Text)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'status': self.status,
+            'stop_reason': self.stop_reason,
+            'positions_at_start': self.positions_at_start,
+            'positions_at_end': self.positions_at_end,
+            'context_analyzed': self.context_analyzed,
+            'downtime_seconds': self.downtime_seconds,
+            'recovery_notes': self.recovery_notes
+        }
+
+class PriceSnapshot(Base):
+    __tablename__ = 'price_snapshots'
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    pair = Column(String(20), nullable=False)
+    price = Column(Float, nullable=False)
+    snapshot_type = Column(String(20), default='periodic')  # periodic, recovery, critical
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'pair': self.pair,
+            'price': self.price,
+            'snapshot_type': self.snapshot_type
+        }
+
 # Database initialization
 engine = None
 Session = None
